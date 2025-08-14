@@ -1,6 +1,7 @@
 const User = require("../models/User")
 const jwt = require("jsonwebtoken")
 const bcrypt = require("bcryptjs")
+const { sendForgotPasswordEmail } = require("../utils/emailService")
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key"
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "24h"
@@ -8,6 +9,16 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "24h"
 // Generate JWT Token
 const generateToken = (userId, employeeId, role) => {
   return jwt.sign({ userId, employeeId, role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
+}
+
+// Generate temporary password
+const generateTempPassword = () => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$"
+  let tempPassword = ""
+  for (let i = 0; i < 8; i++) {
+    tempPassword += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return tempPassword
 }
 
 // Login
@@ -192,9 +203,27 @@ exports.changePassword = async (req, res) => {
 // Forgot Password
 exports.forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body
+    const { employeeId, email } = req.body
 
-    const user = await User.findOne({ email: email.toLowerCase() })
+    // Find user by employee ID or email
+    let user
+    if (employeeId) {
+      user = await User.findOne({
+        employeeId: employeeId.toLowerCase(),
+        isActive: true,
+      })
+    } else if (email) {
+      user = await User.findOne({
+        email: email.toLowerCase(),
+        isActive: true,
+      })
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Employee ID or email is required",
+      })
+    }
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -202,14 +231,104 @@ exports.forgotPassword = async (req, res) => {
       })
     }
 
-    // In a real application, you would send an email with reset link
-    // For now, we'll just return a success message
+    // Generate temporary password
+    const tempPassword = generateTempPassword()
+
+    // Update user with temporary password
+    user.password = tempPassword
+    user.isTemporaryPassword = true
+    await user.save()
+
+    console.log("🔄 Attempting to send forgot password email for:", user.email)
+
+    // Send email with temporary password
+    let emailResult
+    try {
+      emailResult = await sendForgotPasswordEmail(user.email, user.name, user.employeeId, tempPassword)
+      console.log("📧 Forgot password email service response:", emailResult)
+    } catch (emailError) {
+      console.error("❌ Error sending forgot password email:", emailError)
+      emailResult = { success: false, message: emailError.message }
+    }
+
+    console.log("📊 Final forgot password email status:", {
+      sent: emailResult.success,
+      message: emailResult.message,
+      messageId: emailResult.messageId || null,
+    })
+
     res.json({
       success: true,
-      message: "Password reset instructions sent to your email",
+      message: "Temporary password sent to your email",
+      emailStatus: {
+        sent: emailResult.success,
+        message: emailResult.message,
+        messageId: emailResult.messageId || null,
+      },
     })
   } catch (error) {
     console.error("Forgot password error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    })
+  }
+}
+
+// Reset Password with Temporary Password
+exports.resetPassword = async (req, res) => {
+  try {
+    const { employeeId, tempPassword, newPassword } = req.body
+
+    // Validation
+    if (!employeeId || !tempPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Employee ID, temporary password, and new password are required",
+      })
+    }
+
+    // Find user
+    const user = await User.findOne({
+      employeeId: employeeId.toLowerCase(),
+      isActive: true,
+    })
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      })
+    }
+
+    // Check if user has temporary password flag
+    if (!user.isTemporaryPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "No temporary password found. Please request a new one.",
+      })
+    }
+
+    // Check temporary password
+    const isTempPasswordValid = await user.comparePassword(tempPassword)
+    if (!isTempPasswordValid) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid temporary password",
+      })
+    }
+
+    // Update with new password
+    user.password = newPassword
+    user.isTemporaryPassword = false
+    await user.save()
+
+    res.json({
+      success: true,
+      message: "Password reset successfully",
+    })
+  } catch (error) {
+    console.error("Reset password error:", error)
     res.status(500).json({
       success: false,
       message: "Internal server error",

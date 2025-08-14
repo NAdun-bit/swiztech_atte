@@ -26,6 +26,10 @@ const userSchema = new mongoose.Schema(
       required: true,
       minlength: 6,
     },
+    isTemporaryPassword: {
+      type: Boolean,
+      default: false,
+    },
     role: {
       type: String,
       enum: ["admin", "hr", "employee", "manager"],
@@ -85,7 +89,8 @@ const userSchema = new mongoose.Schema(
         default: 60, // minutes
       },
     },
-    shift: { // New field to link to Shift model
+    shift: {
+      // New field to link to Shift model
       type: mongoose.Schema.Types.ObjectId,
       ref: "Shift",
       default: null,

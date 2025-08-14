@@ -13,6 +13,8 @@ import 'package:employee_attendance/utils/theme.dart';
 import 'package:employee_attendance/services/auth_service.dart';
 import 'screens/admin_notice_screen.dart';
 import 'screens/employee_notice_screen.dart';
+import 'screens/forgot_password_screen.dart';
+import 'screens/reset_password_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,7 +46,7 @@ class MyApp extends StatelessWidget {
       onGenerateRoute: (settings) {
         debugPrint('Navigating to route: ${settings.name}');
         if (!['/', '/login', '/dashboard', '/admin', '/schedule', '/request-leave', 
-              '/attendance-history', '/expense-claims', '/profile'].contains(settings.name)) {
+              '/attendance-history', '/expense-claims', '/profile', '/forgot-password', '/reset-password'].contains(settings.name)) {
           debugPrint('Route not found: ${settings.name}');
           return MaterialPageRoute(
             builder: (context) => Scaffold(
@@ -68,6 +70,8 @@ class MyApp extends StatelessWidget {
         '/profile': (context) => ProfileScreen(),
         '/admin-notice': (context) => AdminNoticeScreen(),
         '/employee-notice': (context) => EmployeeNoticeScreen(),
+         '/forgot-password': (context) => ForgotPasswordScreen(),
+        '/reset-password': (context) => ResetPasswordScreen(),
         
       },
     );

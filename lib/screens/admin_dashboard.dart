@@ -6,14 +6,14 @@ import '../../services/auth_service.dart';
 import '../../services/leave_service.dart';
 import '../../services/expense_service.dart';
 import 'assign_schedule_screen.dart';
-
+import '../widgets/loading_widgets.dart';
 
 class AdminDashboard extends StatefulWidget {
   @override
   _AdminDashboardState createState() => _AdminDashboardState();
 }
 
-class _AdminDashboardState extends State<AdminDashboard> {
+class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStateMixin {
   int _selectedIndex = 0;
   List<Map<String, dynamic>> _employees = [];
   List<Map<String, dynamic>> _attendanceRecords = [];
@@ -21,11 +21,33 @@ class _AdminDashboardState extends State<AdminDashboard> {
   List<Map<String, dynamic>> _expenseClaims = [];
   List<String> _departments = [];
   bool _isLoading = true;
+  bool _isRefreshing = false;
   String _errorMessage = '';
+  
+  late AnimationController _fadeController;
+  late AnimationController _slideController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
+    _fadeController = AnimationController(
+      duration: Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _slideController = AnimationController(
+      duration: Duration(milliseconds: 600),
+      vsync: this,
+    );
+    
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
+    _slideAnimation = Tween<Offset>(begin: Offset(0, 0.3), end: Offset.zero).animate(
+      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+    );
+    
     _loadData();
   }
 
@@ -39,6 +61,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
         _loadExpenseClaims(),
         _loadDepartments(),
       ]);
+      
+      _fadeController.forward();
+      _slideController.forward();
     } catch (e) {
       setState(() {
         _errorMessage = 'Failed to load data: ${e.toString()}';
@@ -49,6 +74,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _handleRefresh() async {
+    setState(() => _isRefreshing = true);
+    _fadeController.reset();
+    _slideController.reset();
+    await _loadData();
+    setState(() => _isRefreshing = false);
   }
 
   Future<void> _loadEmployees() async {
@@ -147,6 +180,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ),
         elevation: 0,
         actions: [
+          if (!_isLoading)
+            IconButton(
+              icon: _isRefreshing 
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Icon(Icons.refresh, color: Colors.white),
+              onPressed: _isRefreshing ? null : _handleRefresh,
+            ),
           Container(
             margin: EdgeInsets.only(right: 16),
             child: IconButton(
@@ -181,62 +228,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
         ),
         child: _isLoading
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(
-                      color: AppTheme.primaryBlue,
-                      strokeWidth: 3,
-                    ),
-                    SizedBox(height: 16),
-                    Text('Loading dashboard...', 
-                      style: TextStyle(
-                        color: AppTheme.darkGray,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500
-                      )
-                    ),
-                  ],
-                )
-              )
+            ? _buildLoadingState() // Enhanced loading state
             : _errorMessage.isNotEmpty
-                ? Center(
-                    child: Container(
-                      margin: EdgeInsets.all(20),
-                      padding: EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 10,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
+                ? _buildErrorState()
+                : RefreshIndicator( // Added pull-to-refresh
+                    onRefresh: _handleRefresh,
+                    color: AppTheme.primaryBlue,
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: SlideTransition(
+                        position: _slideAnimation,
+                        child: _buildBody(),
                       ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.error_outline, 
-                            color: AppTheme.errorRed, 
-                            size: 48
-                          ),
-                          SizedBox(height: 16),
-                          Text(_errorMessage, 
-                            style: TextStyle(
-                              color: AppTheme.errorRed,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    )
-                  )
-                : _buildBody(),
+                    ),
+                  ),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -300,6 +305,103 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  Widget _buildLoadingState() {
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(20),
+      child: Column(
+        children: [
+          LoadingWidgets.fullScreenLoader(
+            message: 'Loading dashboard...',
+            showMessage: true,
+          ),
+          SizedBox(height: 40),
+          // Skeleton loaders for dashboard cards
+          Row(
+            children: [
+              Expanded(child: LoadingWidgets.dashboardCardSkeleton()),
+              SizedBox(width: 15),
+              Expanded(child: LoadingWidgets.dashboardCardSkeleton()),
+            ],
+          ),
+          SizedBox(height: 15),
+          Row(
+            children: [
+              Expanded(child: LoadingWidgets.dashboardCardSkeleton()),
+              SizedBox(width: 15),
+              Expanded(child: LoadingWidgets.dashboardCardSkeleton()),
+            ],
+          ),
+          SizedBox(height: 15),
+          Row(
+            children: [
+              Expanded(child: LoadingWidgets.dashboardCardSkeleton()),
+              SizedBox(width: 15),
+              Expanded(child: LoadingWidgets.dashboardCardSkeleton()),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: TweenAnimationBuilder(
+        duration: Duration(milliseconds: 600),
+        tween: Tween<double>(begin: 0, end: 1),
+        builder: (context, double value, child) {
+          return Transform.scale(
+            scale: 0.8 + (0.2 * value),
+            child: Opacity(
+              opacity: value,
+              child: Container(
+                margin: EdgeInsets.all(20),
+                padding: EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.error_outline, 
+                      color: AppTheme.errorRed, 
+                      size: 48
+                    ),
+                    SizedBox(height: 16),
+                    Text(_errorMessage, 
+                      style: TextStyle(
+                        color: AppTheme.errorRed,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 20),
+                    LoadingWidgets.loadingButton(
+                      text: 'Retry',
+                      onPressed: _loadData,
+                      isLoading: _isLoading,
+                      backgroundColor: AppTheme.primaryBlue,
+                      height: 45,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildNavIcon(IconData outlinedIcon, IconData filledIcon, int index) {
     bool isSelected = _selectedIndex == index;
     return AnimatedContainer(
@@ -338,135 +440,157 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildDashboardTab() {
-    return SingleChildScrollView(
-      padding: EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.primaryBlue, Color(0xFF1E88E5)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.primaryBlue.withOpacity(0.3),
-                  blurRadius: 15,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Welcome Back!',
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+    return RefreshIndicator(
+      onRefresh: _handleRefresh,
+      color: AppTheme.primaryBlue,
+      child: SingleChildScrollView(
+        physics: AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TweenAnimationBuilder(
+              duration: Duration(milliseconds: 600),
+              tween: Tween<double>(begin: 0, end: 1),
+              builder: (context, double value, child) {
+                return Transform.scale(
+                  scale: 0.9 + (0.1 * value),
+                  child: Opacity(
+                    opacity: value,
+                    child: Container(
+                      padding: EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [AppTheme.primaryBlue, Color(0xFF1E88E5)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppTheme.primaryBlue.withOpacity(0.3),
+                            blurRadius: 15,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
                       ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Here\'s your team overview for today',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.white.withOpacity(0.9),
-                          fontWeight: FontWeight.w500,
-                        ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Welcome Back!',
+                                  style: TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Here\'s your team overview for today',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.white.withOpacity(0.9),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              Icons.dashboard,
+                              color: Colors.white,
+                              size: 32,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-                Container(
-                  padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(
-                    Icons.dashboard,
-                    color: Colors.white,
-                    size: 32,
-                  ),
-                ),
-              ],
+                );
+              },
             ),
-          ),
-          SizedBox(height: 30),
-          Text(
-            'Quick Overview',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.darkGray,
+            SizedBox(height: 30),
+            TweenAnimationBuilder(
+              duration: Duration(milliseconds: 400),
+              tween: Tween<double>(begin: 0, end: 1),
+              builder: (context, double value, child) {
+                return Transform.translate(
+                  offset: Offset(30 * (1 - value), 0),
+                  child: Opacity(
+                    opacity: value,
+                    child: Text(
+                      'Quick Overview',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.darkGray,
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-          ),
-          SizedBox(height: 20),
-          Row(children: [
-            Expanded(child: _buildModernStatCard(
-              'Total Employees', 
-              '${_employees.length}', 
-              Icons.people, 
-              AppTheme.primaryBlue,
-              Color(0xFF1E88E5)
-            )),
-            SizedBox(width: 15),
-            Expanded(child: _buildModernStatCard(
-              'Present Today', 
-              '${_attendanceRecords.where((r) => r['status'] == 'present').length}', 
-              Icons.check_circle, 
-              AppTheme.successGreen,
-              Color(0xFF43A047)
-            )),
-          ]),
-          SizedBox(height: 15),
-          Row(children: [
-            Expanded(child: _buildModernStatCard(
-              'Absent Today', 
-              '${_attendanceRecords.where((r) => r['status'] == 'absent').length}', 
-              Icons.cancel, 
-              AppTheme.errorRed,
-              Color(0xFFE53935)
-            )),
-            SizedBox(width: 15),
-            Expanded(child: _buildModernStatCard(
-              'Late Arrivals', 
-              '${_attendanceRecords.where((r) => r['status'] == 'late').length}', 
-              Icons.access_time, 
-              AppTheme.warningOrange,
-              Color(0xFFFF9800)
-            )),
-          ]),
-          SizedBox(height: 15),
-          Row(children: [
-            Expanded(child: _buildModernStatCard(
-              'Pending Leaves', 
-              '${_leaveRequests.where((r) => r['status'] == 'pending').length}', 
-              Icons.pending_actions, 
-              Color(0xFF9C27B0),
-              Color(0xFFAB47BC)
-            )),
-            SizedBox(width: 15),
-            Expanded(child: _buildModernStatCard(
-              'Pending Expenses', 
-              '${_expenseClaims.where((r) => r['status'] == 'pending').length}', 
-              Icons.receipt_long, 
-              Color(0xFF795548),
-              Color(0xFF8D6E63)
-            )),
-          ]),
-        ],
+            SizedBox(height: 20),
+            ..._buildAnimatedStatCards(),
+          ],
+        ),
       ),
     );
+  }
+
+  List<Widget> _buildAnimatedStatCards() {
+    final cards = [
+      [
+        _buildModernStatCard('Total Employees', '${_employees.length}', Icons.people, AppTheme.primaryBlue, Color(0xFF1E88E5)),
+        _buildModernStatCard('Present Today', '${_attendanceRecords.where((r) => r['status'] == 'present').length}', Icons.check_circle, AppTheme.successGreen, Color(0xFF43A047)),
+      ],
+      [
+        _buildModernStatCard('Absent Today', '${_attendanceRecords.where((r) => r['status'] == 'absent').length}', Icons.cancel, AppTheme.errorRed, Color(0xFFE53935)),
+        _buildModernStatCard('Late Arrivals', '${_attendanceRecords.where((r) => r['status'] == 'late').length}', Icons.access_time, AppTheme.warningOrange, Color(0xFFFF9800)),
+      ],
+      [
+        _buildModernStatCard('Pending Leaves', '${_leaveRequests.where((r) => r['status'] == 'pending').length}', Icons.pending_actions, Color(0xFF9C27B0), Color(0xFFAB47BC)),
+        _buildModernStatCard('Pending Expenses', '${_expenseClaims.where((r) => r['status'] == 'pending').length}', Icons.receipt_long, Color(0xFF795548), Color(0xFF8D6E63)),
+      ],
+    ];
+
+    return cards.asMap().entries.map((entry) {
+      int rowIndex = entry.key;
+      List<Widget> rowCards = entry.value;
+      
+      return TweenAnimationBuilder(
+        duration: Duration(milliseconds: 500 + (rowIndex * 100)),
+        tween: Tween<double>(begin: 0, end: 1),
+        builder: (context, double value, child) {
+          return Transform.translate(
+            offset: Offset(0, 30 * (1 - value)),
+            child: Opacity(
+              opacity: value,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 15),
+                child: Row(
+                  children: [
+                    Expanded(child: rowCards[0]),
+                    SizedBox(width: 15),
+                    Expanded(child: rowCards[1]),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    }).toList();
   }
 
   Widget _buildModernStatCard(String title, String value, IconData icon, Color primaryColor, Color secondaryColor) {
@@ -554,196 +678,282 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Widget _buildEmployeesTab() {
     return Column(children: [
-      Container(
-        padding: EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Employees',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.darkGray,
-                  ),
-                ),
-                Text(
-                  '${_employees.length} total employees',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-            Row(children: [
-              _buildModernButton(
-                onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => AssignScheduleScreen())).then((_) => _loadEmployees());
-                },
-                icon: Icons.calendar_month,
-                label: 'Schedule',
-                color: Color(0xFF9C27B0),
-              ),
-              SizedBox(width: 10),
-              _buildModernButton(
-                onPressed: _showAddEmployeeDialog,
-                icon: Icons.add,
-                label: 'Add Employee',
-                color: AppTheme.primaryBlue,
-              ),
-            ]),
-          ],
-        ),
-      ),
-      Expanded(
-        child: ListView.builder(
-          padding: EdgeInsets.all(20),
-          itemCount: _employees.length,
-          itemBuilder: (context, index) {
-            final employee = _employees[index];
-            return Container(
-              margin: EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 10,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ListTile(
-                contentPadding: EdgeInsets.all(16),
-                leading: Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [AppTheme.primaryBlue, Color(0xFF1E88E5)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+      TweenAnimationBuilder(
+        duration: Duration(milliseconds: 500),
+        tween: Tween<double>(begin: 0, end: 1),
+        builder: (context, double value, child) {
+          return Transform.translate(
+            offset: Offset(0, -20 * (1 - value)),
+            child: Opacity(
+              opacity: value,
+              child: Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: Offset(0, 2),
                     ),
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  child: Center(
-                    child: Text(
-                      employee['name'][0].toUpperCase(),
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+                  ],
                 ),
-                title: Text(
-                  employee['name'],
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    SizedBox(height: 4),
-                    Row(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.business, size: 14, color: Colors.grey[600]),
-                        SizedBox(width: 4),
                         Text(
-                          '${employee['department'] ?? 'N/A'}',
-                          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                          'Employees',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.darkGray,
+                          ),
                         ),
-                        SizedBox(width: 12),
-                        Icon(Icons.badge, size: 14, color: Colors.grey[600]),
-                        SizedBox(width: 4),
                         Text(
-                          '${employee['employeeId']}',
-                          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                          '${_employees.length} total employees',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ],
                     ),
-                    if (employee['shift'] != null) ...[
-                      SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(Icons.schedule, size: 14, color: AppTheme.primaryBlue),
-                          SizedBox(width: 4),
-                          Text(
-                            'Shift: ${employee['shift']['name']} (${employee['shift']['startTime']} - ${employee['shift']['endTime']})',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.primaryBlue,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                    Row(children: [
+                      _buildModernButton(
+                        onPressed: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => AssignScheduleScreen())).then((_) => _loadEmployees());
+                        },
+                        icon: Icons.calendar_month,
+                        label: 'Schedule',
+                        color: Color(0xFF9C27B0),
                       ),
-                    ],
+                      SizedBox(width: 10),
+                      _buildModernButton(
+                        onPressed: _showAddEmployeeDialog,
+                        icon: Icons.add,
+                        label: 'Add Employee',
+                        color: AppTheme.primaryBlue,
+                      ),
+                    ]),
                   ],
                 ),
-                trailing: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: PopupMenuButton(
-                    icon: Icon(Icons.more_vert, color: Colors.grey[600]),
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        child: Row(
-                          children: [
-                            Icon(Icons.edit, size: 18, color: AppTheme.primaryBlue),
-                            SizedBox(width: 8),
-                            Text('Edit'),
-                          ],
-                        ),
-                        value: 'edit',
-                      ),
-                      PopupMenuItem(
-                        child: Row(
-                          children: [
-                            Icon(Icons.delete, size: 18, color: AppTheme.errorRed),
-                            SizedBox(width: 8),
-                            Text('Delete'),
-                          ],
-                        ),
-                        value: 'delete',
-                      ),
-                    ],
-                    onSelected: (value) {
-                      if (value == 'edit') {
-                        _showEditEmployeeDialog(employee);
-                      } else if (value == 'delete') {
-                        _deleteEmployee(employee['_id']);
-                      }
-                    },
-                  ),
-                ),
               ),
-            );
-          },
+            ),
+          );
+        },
+      ),
+      Expanded(
+        child: RefreshIndicator(
+          onRefresh: () => _loadEmployees(),
+          color: AppTheme.primaryBlue,
+          child: _employees.isEmpty
+              ? _buildEmptyEmployeeState()
+              : ListView.builder(
+                  physics: AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.all(20),
+                  itemCount: _employees.length,
+                  itemBuilder: (context, index) {
+                    return TweenAnimationBuilder(
+                      duration: Duration(milliseconds: 300 + (index * 50)),
+                      tween: Tween<double>(begin: 0, end: 1),
+                      builder: (context, double value, child) {
+                        return Transform.translate(
+                          offset: Offset(50 * (1 - value), 0),
+                          child: Opacity(
+                            opacity: value,
+                            child: _buildEmployeeCard(_employees[index], index),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
         ),
       ),
     ]);
+  }
+
+  Widget _buildEmptyEmployeeState() {
+    return Center(
+      child: TweenAnimationBuilder(
+        duration: Duration(milliseconds: 600),
+        tween: Tween<double>(begin: 0, end: 1),
+        builder: (context, double value, child) {
+          return Transform.scale(
+            scale: 0.8 + (0.2 * value),
+            child: Opacity(
+              opacity: value,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.people_outline,
+                    size: 80,
+                    color: AppTheme.primaryBlue.withOpacity(0.6),
+                  ),
+                  SizedBox(height: 20),
+                  Text(
+                    'No employees found',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: AppTheme.darkGray,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Add your first employee to get started',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppTheme.lightGray,
+                    ),
+                  ),
+                  SizedBox(height: 30),
+                  LoadingWidgets.loadingButton(
+                    text: 'Add Employee',
+                    onPressed: _showAddEmployeeDialog,
+                    isLoading: false,
+                    backgroundColor: AppTheme.primaryBlue,
+                    height: 45,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildEmployeeCard(Map<String, dynamic> employee, int index) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: EdgeInsets.all(16),
+        leading: Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppTheme.primaryBlue, Color(0xFF1E88E5)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(25),
+          ),
+          child: Center(
+            child: Text(
+              employee['name'][0].toUpperCase(),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+        title: Text(
+          employee['name'],
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.business, size: 14, color: Colors.grey[600]),
+                SizedBox(width: 4),
+                Text(
+                  '${employee['department'] ?? 'N/A'}',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                ),
+                SizedBox(width: 12),
+                Icon(Icons.badge, size: 14, color: Colors.grey[600]),
+                SizedBox(width: 4),
+                Text(
+                  '${employee['employeeId']}',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                ),
+              ],
+            ),
+            if (employee['shift'] != null) ...[
+              SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.schedule, size: 14, color: AppTheme.primaryBlue),
+                  SizedBox(width: 4),
+                  Text(
+                    'Shift: ${employee['shift']['name']} (${employee['shift']['startTime']} - ${employee['shift']['endTime']})',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.primaryBlue,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+        trailing: Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: PopupMenuButton(
+            icon: Icon(Icons.more_vert, color: Colors.grey[600]),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                child: Row(
+                  children: [
+                    Icon(Icons.edit, size: 18, color: AppTheme.primaryBlue),
+                    SizedBox(width: 8),
+                    Text('Edit'),
+                  ],
+                ),
+                value: 'edit',
+              ),
+              PopupMenuItem(
+                child: Row(
+                  children: [
+                    Icon(Icons.delete, size: 18, color: AppTheme.errorRed),
+                    SizedBox(width: 8),
+                    Text('Delete'),
+                  ],
+                ),
+                value: 'delete',
+              ),
+            ],
+            onSelected: (value) {
+              if (value == 'edit') {
+                _showEditEmployeeDialog(employee);
+              } else if (value == 'delete') {
+                _deleteEmployee(employee['_id']);
+              }
+            },
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildModernButton({
@@ -1467,5 +1677,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Analytics generated successfully (Placeholder)')),
     );
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    _slideController.dispose();
+    super.dispose();
   }
 }

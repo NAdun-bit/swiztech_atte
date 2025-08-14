@@ -1,10 +1,13 @@
 const express = require("express")
 const router = express.Router()
 const User = require("../models/User")
+const employeeController = require("../controllers/employeeController") // Added employee controller import
 const { authenticateToken } = require("../middleware/auth")
 
 // All routes require authentication
 router.use(authenticateToken)
+
+router.get("/schedule", employeeController.getMySchedule)
 
 // Get employee profile
 router.get("/profile", async (req, res) => {
@@ -49,11 +52,10 @@ router.put("/profile", async (req, res) => {
       updateFields.workLocation = workLocation
     }
 
-    const user = await User.findOneAndUpdate(
-      { employeeId: req.user.employeeId },
-      updateFields,
-      { new: true, runValidators: true },
-    ).select("-password")
+    const user = await User.findOneAndUpdate({ employeeId: req.user.employeeId }, updateFields, {
+      new: true,
+      runValidators: true,
+    }).select("-password")
 
     if (!user) {
       return res.status(404).json({

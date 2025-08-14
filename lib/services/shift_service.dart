@@ -26,5 +26,32 @@ class ShiftService {
       return [];
     }
   }
-}
 
+  static Future<Map<String, dynamic>?> getMySchedule() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/employee/schedule'),
+        headers: AuthService.getAuthHeaders(),
+      );
+
+      print('📱 Schedule API Response Status: ${response.statusCode}');
+      print('📱 Schedule API Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print('📱 Parsed JSON Data: $data');
+        
+        if (data['success'] == true) {
+          print('📱 Schedule Data: ${data['schedule']}');
+          return data['schedule'];
+        }
+        throw Exception(data['message'] ?? 'Failed to load schedule');
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error getting employee schedule: $e');
+      return null;
+    }
+  }
+}
