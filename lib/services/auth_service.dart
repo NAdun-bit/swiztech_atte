@@ -25,6 +25,52 @@ class AuthService {
     return _user;
   }
 
+  static bool isLoggedIn() {
+    return _token != null && _user != null;
+  }
+
+  static Future<bool> validateToken() async {
+    if (_token == null) return false;
+    
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/auth/verify'),
+        headers: getAuthHeaders(),
+      );
+
+      final responseBody = jsonDecode(response.body);
+      
+      if (response.statusCode == 200 && responseBody['success']) {
+        // Token is valid, update user data if needed
+        if (responseBody['user'] != null) {
+          _user = responseBody['user'];
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('user_data', jsonEncode(_user));
+        }
+        return true;
+      } else {
+        // Token is invalid, clear stored data
+        await _clearAuthData();
+        return false;
+      }
+    } catch (e) {
+      print('Token validation error: $e');
+      // On network error, assume token is still valid to allow offline usage
+      return true;
+    }
+  }
+
+  static String getDashboardRoute() {
+    if (_user == null) return '/login';
+    
+    final role = _user!['role']?.toString().toLowerCase();
+    if (role == 'admin' || role == 'hr') {
+      return '/admin';
+    } else {
+      return '/dashboard';
+    }
+  }
+
   static Map<String, String> getAuthHeaders() {
     return {
       'Content-Type': 'application/json',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../utils/theme.dart';
+import '../services/auth_service.dart';
 
 class SplashScreen extends StatefulWidget {
   @override
@@ -31,8 +32,39 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _animationController.forward();
     
     Timer(Duration(seconds: 3), () {
-      Navigator.pushReplacementNamed(context, '/login');
+      _checkAuthenticationAndNavigate();
     });
+  }
+
+  Future<void> _checkAuthenticationAndNavigate() async {
+    try {
+      // Check if user has stored login credentials
+      if (AuthService.isLoggedIn()) {
+        print('Found stored credentials, validating token...');
+        
+        // Validate the stored token with backend
+        bool isTokenValid = await AuthService.validateToken();
+        
+        if (isTokenValid) {
+          print('Token is valid, navigating to dashboard...');
+          // Navigate to appropriate dashboard based on user role
+          String dashboardRoute = AuthService.getDashboardRoute();
+          Navigator.pushReplacementNamed(context, dashboardRoute);
+          return;
+        } else {
+          print('Token is invalid, navigating to login...');
+        }
+      } else {
+        print('No stored credentials found, navigating to login...');
+      }
+      
+      // If no valid authentication, go to login
+      Navigator.pushReplacementNamed(context, '/login');
+    } catch (e) {
+      print('Error checking authentication: $e');
+      // On error, default to login screen
+      Navigator.pushReplacementNamed(context, '/login');
+    }
   }
 
   @override
@@ -135,7 +167,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   width: 200,
                   child: ElevatedButton(
                     onPressed: () {
-                      Navigator.pushReplacementNamed(context, '/login');
+                      _checkAuthenticationAndNavigate();
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
